@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Zap, Gauge, Shield, Check, Calendar, ArrowRight, Sparkles, Calculator } from 'lucide-react';
+import { X, Zap, Gauge, Shield, Check, Calendar, ArrowRight, Sparkles, Calculator, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Car } from '../types';
 
 interface CarDetailModalProps {
@@ -24,6 +24,51 @@ export const CarDetailModal: React.FC<CarDetailModalProps> = ({
   // Loan calculator states
   const [downPaymentPercent, setDownPaymentPercent] = useState(20);
   const [loanTermMonths, setLoanTermMonths] = useState(60);
+
+  // Ảnh đang xem trong album
+  const [imageIndex, setImageIndex] = useState(0);
+
+  // Album ảnh: ưu tiên mảng `images`, không có thì dùng ảnh đại diện.
+  const gallery = useMemo(() => {
+    if (!car) return [];
+    const list =
+      car.images && car.images.length > 0
+        ? car.images
+        : car.image
+          ? [car.image]
+          : [];
+    return list.filter(Boolean);
+  }, [car]);
+
+  const hasMultipleImages = gallery.length > 1;
+
+  const goPrevImage = useCallback(() => {
+    setImageIndex((i) => (i - 1 + gallery.length) % gallery.length);
+  }, [gallery.length]);
+
+  const goNextImage = useCallback(() => {
+    setImageIndex((i) => (i + 1) % gallery.length);
+  }, [gallery.length]);
+
+  // Mở xe khác thì trả album về ảnh đầu và đặt lại màu đang chọn — nếu không,
+  // xe mới sẽ hiển thị ảnh và màu còn sót lại của xe xem trước đó.
+  useEffect(() => {
+    setImageIndex(0);
+    setSelectedColor(car?.colors ? car.colors[0] : null);
+  }, [car]);
+
+  // Điều hướng bằng phím mũi tên cho nhanh.
+  useEffect(() => {
+    if (!car || !hasMultipleImages) return;
+
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft') goPrevImage();
+      else if (e.key === 'ArrowRight') goNextImage();
+    };
+
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [car, hasMultipleImages, goPrevImage, goNextImage]);
 
   if (!car) return null;
 
@@ -102,15 +147,70 @@ export const CarDetailModal: React.FC<CarDetailModalProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
               
               <div className="md:col-span-7 relative rounded-xl overflow-hidden bg-gradient-to-b from-white to-[#F1F2F3] border border-[#E2E5E8] aspect-[16/10]">
-                <img
-                  src={car.image}
-                  alt={displayName}
-                  className="w-full h-full object-cover"
-                />
+                <AnimatePresence initial={false}>
+                  <motion.img
+                    key={imageIndex}
+                    src={gallery[imageIndex] || car.image}
+                    alt={`${displayName} — ảnh ${imageIndex + 1}/${gallery.length}`}
+                    className="absolute inset-0 w-full h-full object-cover"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.25 }}
+                  />
+                </AnimatePresence>
+
                 {displayTag && (
-                  <div className="absolute top-3 left-3 px-3 py-1 rounded-sm bg-[#17212B] text-white text-[10px] font-bold uppercase tracking-wider">
+                  <div className="absolute top-3 left-3 px-3 py-1 rounded-sm bg-[#17212B] text-white text-[10px] font-bold uppercase tracking-wider z-10">
                     {displayTag}
                   </div>
+                )}
+
+                {/* Điều hướng album — chỉ hiện khi xe có nhiều hơn 1 ảnh */}
+                {hasMultipleImages && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={goPrevImage}
+                      aria-label={isJa ? '前の画像' : 'Ảnh trước'}
+                      className="absolute left-2 top-1/2 -translate-y-1/2 z-10 p-2 rounded-full bg-white/80 hover:bg-white text-[#17212B] shadow-md backdrop-blur-sm transition-colors cursor-pointer"
+                    >
+                      <ChevronLeft className="w-5 h-5" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={goNextImage}
+                      aria-label={isJa ? '次の画像' : 'Ảnh kế tiếp'}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 z-10 p-2 rounded-full bg-white/80 hover:bg-white text-[#17212B] shadow-md backdrop-blur-sm transition-colors cursor-pointer"
+                    >
+                      <ChevronRight className="w-5 h-5" />
+                    </button>
+
+                    {/* Bộ đếm */}
+                    <div className="absolute top-3 right-3 z-10 px-2.5 py-1 rounded-full bg-[#17212B]/75 text-white text-[10px] font-bold tabular-nums backdrop-blur-sm">
+                      {imageIndex + 1} / {gallery.length}
+                    </div>
+
+                    {/* Chấm chỉ số — ẩn bớt khi album quá dài để khỏi tràn */}
+                    {gallery.length <= 8 && (
+                      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5">
+                        {gallery.map((_, i) => (
+                          <button
+                            key={i}
+                            type="button"
+                            onClick={() => setImageIndex(i)}
+                            aria-label={`${isJa ? '画像' : 'Ảnh'} ${i + 1}`}
+                            className={`h-1.5 rounded-full transition-all cursor-pointer ${
+                              i === imageIndex
+                                ? 'w-5 bg-[#C8A96B]'
+                                : 'w-1.5 bg-white/70 hover:bg-white'
+                            }`}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
 
